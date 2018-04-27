@@ -4,6 +4,7 @@ package com.bitstudio.aztranslate;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Environment;
 import android.provider.Settings;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentManager;
@@ -20,6 +21,8 @@ import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.Toast;
 
+import java.io.File;
+
 public class MainActivity extends AppCompatActivity implements
         SettingFragment.OnFragmentInteractionListener,
         HistoryFragment.OnFragmentInteractionListener {
@@ -27,6 +30,8 @@ public class MainActivity extends AppCompatActivity implements
     private static int MODE_SCREEN = 1;
     private static int MODE_CAMERA = 0;
     private static int MODE_FILE = 2;
+
+    public static String CACHE = Environment.getExternalStorageDirectory().toString()+"/aztrans/";
 
     //Controls
     private ImageButton btnSetting;
@@ -44,6 +49,7 @@ public class MainActivity extends AppCompatActivity implements
     //Animations
     private Animation anim_btnscan_changemode_fadein;
     private Animation anim_btnscan_changemode_fadeout;
+    private Animation anim_bounce, anim_zoomout;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -57,6 +63,11 @@ public class MainActivity extends AppCompatActivity implements
                     Uri.parse("package:" + getPackageName()));
             startActivityForResult(intent, CODE_DRAW_OVER_OTHER_APP_PERMISSION);
         } else {
+
+
+
+            createDirs();
+
             addControls();
             addEvents();
             loadAnimations();
@@ -66,11 +77,13 @@ public class MainActivity extends AppCompatActivity implements
 
     private void addEvents() {
         btnSetting.setOnClickListener(v->{
+            btnSetting.startAnimation(anim_bounce);
             openFragment( new SettingFragment());
             btnSetting.setImageResource(R.drawable.toggle_setting_enable);
             btnHistory.setImageResource(R.drawable.toggle_history_disable);
         });
         btnHistory.setOnClickListener(v->{
+            btnHistory.startAnimation(anim_bounce);
             openFragment( new HistoryFragment());
             btnSetting.setImageResource(R.drawable.toggle_setting_disable);
             btnHistory.setImageResource(R.drawable.toggle_history_enable);
@@ -93,7 +106,6 @@ public class MainActivity extends AppCompatActivity implements
         btnHistory = findViewById(R.id.btnHistory);
         btnFloat = findViewById(R.id.btnFloat);
         frmMainFrame = findViewById(R.id.frmMainFrame);
-
         gestureDetector = new GestureDetector(this, new BtnStartModeGesture());
 
     }
@@ -102,7 +114,8 @@ public class MainActivity extends AppCompatActivity implements
     private void loadAnimations() {
         anim_btnscan_changemode_fadein = AnimationUtils.loadAnimation(this, R.anim.anim_btnscan_changemode_fadein);
         anim_btnscan_changemode_fadeout = AnimationUtils.loadAnimation(this, R.anim.anim_btnscan_changemode_fadeout);
-
+        anim_bounce = AnimationUtils.loadAnimation(this, R.anim.anim_bounce);
+        anim_zoomout = AnimationUtils.loadAnimation(this, R.anim.anim_zoomout);
     }
 
 
@@ -118,6 +131,23 @@ public class MainActivity extends AppCompatActivity implements
     @Override
     public void onFragmentInteraction(Uri uri) {
 
+    }
+
+
+    public void createDirs() {
+            File storeDirectory = new File(CACHE);
+            if (!storeDirectory.exists()) {
+                boolean success = storeDirectory.mkdirs();
+            }
+
+                File imgDirectory = new File(CACHE+"histories/img/");
+                if (!imgDirectory.exists()) imgDirectory.mkdirs();
+
+                File xmlDirectory = new File(CACHE+"histories/xml/");
+                if (!xmlDirectory.exists()) xmlDirectory.mkdirs();
+
+                File datDirectory = new File(CACHE+"dat/");
+                if (!datDirectory.exists()) datDirectory.mkdirs();
     }
 
 
@@ -142,6 +172,7 @@ public class MainActivity extends AppCompatActivity implements
 
         @Override
         public boolean onSingleTapUp(MotionEvent e) {
+            btnFloat.startAnimation(anim_zoomout);
                 Intent intent = new Intent(MainActivity.this, FloatingActivity.class);
                 intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
                 startActivity(intent);
