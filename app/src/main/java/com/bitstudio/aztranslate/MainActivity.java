@@ -1,31 +1,68 @@
 package com.bitstudio.aztranslate;
 
 
+import android.Manifest;
+import android.app.Activity;
+import android.app.ProgressDialog;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.database.Cursor;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
+import android.provider.MediaStore;
 import android.provider.Settings;
+import android.support.annotation.NonNull;
+import android.support.constraint.ConstraintLayout;
+import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentManager;
 import android.support.v4.app.FragmentTransaction;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
+import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
-import android.widget.Toast;
+import android.widget.ImageView;
+import android.widget.TextView;
+
+import com.bitstudio.aztranslate.fragments.BookmarkFragment;
+import com.bitstudio.aztranslate.fragments.FavoritesFragment;
+import com.bitstudio.aztranslate.fragments.HistoryFragment;
+import com.bitstudio.aztranslate.fragments.SettingFragment;
+
+import com.bitstudio.aztranslate.LocalDatabase.TranslationHistoryDatabaseHelper;
+import com.bitstudio.aztranslate.models.ScreenshotObj;
+import com.bitstudio.aztranslate.models.BookmarkWord;
+import com.bitstudio.aztranslate.models.TranslationHistory;
+import com.bitstudio.aztranslate.ocr.OcrManager;
 
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.util.ArrayList;
+
+import me.toptas.fancyshowcase.FancyShowCaseQueue;
+import me.toptas.fancyshowcase.FancyShowCaseView;
+import me.toptas.fancyshowcase.OnViewInflateListener;
 
 public class MainActivity extends AppCompatActivity implements
         SettingFragment.OnFragmentInteractionListener,
-        HistoryFragment.OnFragmentInteractionListener {
+        HistoryFragment.OnFragmentInteractionListener,
+        FavoritesFragment.OnFragmentInteractionListener,
+        BookmarkFragment.OnFragmentInteractionListener {
 
     private static int MODE_SCREEN = 1;
     private static int MODE_CAMERA = 0;
@@ -34,10 +71,19 @@ public class MainActivity extends AppCompatActivity implements
     public static String CACHE = Environment.getExternalStorageDirectory().toString()+"/aztrans/";
 
     //Controls
-    private ImageButton btnSetting;
+    private ImageButton btnSetting, btnBook, btnFavorite;
     private ImageButton btnHistory;
     private ImageButton btnFloat;
+    private ImageButton btnTabList[] = new ImageButton[4];
     private FrameLayout frmMainFrame;
+    private ConstraintLayout lbTabTitleBackground;
+    private TextView lbTabTitle;
+    private ImageView imTabTitle;
+
+    FancyShowCaseQueue mQueue;
+    private TextView tvTitle;
+    private Button btnNext;
+    private int conditor = 0;
 
     private static final int CODE_DRAW_OVER_OTHER_APP_PERMISSION = 2084;
 
@@ -50,43 +96,106 @@ public class MainActivity extends AppCompatActivity implements
     private Animation anim_btnscan_changemode_fadein;
     private Animation anim_btnscan_changemode_fadeout;
     private Animation anim_bounce, anim_zoomout;
+    private Animation anim_general_fadeout, anim_general_fadein;
+
+    // translationHistoryDatabaseHelper takes responsibility for creating and managing our local database
+    public TranslationHistoryDatabaseHelper translationHistoryDatabaseHelper;
+    public static ArrayList<TranslationHistory> translationHistories = new ArrayList<>();
+    private Animation anim_tabtile_rotate;
+    public static ArrayList<TranslationHistory> favouriteHistories = new ArrayList<>();
+    private OcrManager ocrManager;
+    private int screenHeight, screenWidth;
+
+    public static ArrayList<BookmarkWord> bookmarkWords = new ArrayList<>();
+
+
+    private ProgressDialog dialog;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
-            Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:" + getPackageName()));
-            startActivityForResult(intent, CODE_DRAW_OVER_OTHER_APP_PERMISSION);
-        } else {
+        Setting.STATUSBAR_HEIGHT = getStatusBarHeight();
+        DisplayMetrics displayMetrics = new DisplayMetrics();
+        getWindowManager().getDefaultDisplay().getMetrics(displayMetrics);
+        screenHeight = displayMetrics.heightPixels;
+        screenWidth = displayMetrics.widthPixels;
 
 
 
+            requestPermissions();
             createDirs();
-
             addControls();
             addEvents();
             loadAnimations();
-            openFragment( new SettingFragment());
+            btnSetting.performClick();
+            loadSetting();
+        translationHistoryDatabaseHelper = new TranslationHistoryDatabaseHelper(this, null);
+    }
+
+    private void requestPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (!Settings.canDrawOverlays(this)) {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:" + getPackageName()));
+                startActivityForResult(intent, CODE_DRAW_OVER_OTHER_APP_PERMISSION);
+            }
+            if (checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, 3);
+            }
+            if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, 3);
+            }
         }
     }
 
+    private void loadSetting() {
+        SharedPreferences settingXML= getSharedPreferences("setting", MODE_PRIVATE);
+        Setting.recoLang = settingXML.getString("RECOLANG", "vie");
+        Setting.tranLang = settingXML.getString("TRANLANG", "vie");
+        Setting.WordBorder.BORDER_COLOR = settingXML.getInt("WBORDER", Color.RED);
+        Setting.COMPRESSED_RATE = settingXML.getInt("COMPRESSED", 8);
+        Setting.WordBorder.BORDER_SHAPE = settingXML.getInt("WBORDERSHAPE", 8);
+    }
+
     private void addEvents() {
+
         btnSetting.setOnClickListener(v->{
             btnSetting.startAnimation(anim_bounce);
             openFragment( new SettingFragment());
             btnSetting.setImageResource(R.drawable.toggle_setting_enable);
+            changeTabTitle("Setting", Color.WHITE, Color.BLUE, R.drawable.toggle_setting_white);
             btnHistory.setImageResource(R.drawable.toggle_history_disable);
+            btnFavorite.setImageResource(R.drawable.toggle_favorite_disable);
+            btnBook.setImageResource(R.drawable.toggle_book_disable);
         });
         btnHistory.setOnClickListener(v->{
             btnHistory.startAnimation(anim_bounce);
             openFragment( new HistoryFragment());
-            btnSetting.setImageResource(R.drawable.toggle_setting_disable);
             btnHistory.setImageResource(R.drawable.toggle_history_enable);
+            changeTabTitle("History", Color.WHITE, Color.CYAN, R.drawable.toggle_history_white);
+            btnSetting.setImageResource(R.drawable.toggle_setting_disable);
+            btnFavorite.setImageResource(R.drawable.toggle_favorite_disable);
+            btnBook.setImageResource(R.drawable.toggle_book_disable);
+        });
+        btnBook.setOnClickListener(v-> {
+            btnBook.startAnimation(anim_bounce);
+            openFragment( new BookmarkFragment());
+            btnBook.setImageResource(R.drawable.toggle_book_enable);
+            changeTabTitle("Bookmark", Color.WHITE, Color.GRAY, R.drawable.toggle_book_white);
+            btnSetting.setImageResource(R.drawable.toggle_setting_disable);
+            btnFavorite.setImageResource(R.drawable.toggle_favorite_disable);
+            btnHistory.setImageResource(R.drawable.toggle_history_disable);
+        });
+        btnFavorite.setOnClickListener(v-> {
+            btnFavorite.startAnimation(anim_bounce);
+            openFragment(new FavoritesFragment());
+            btnFavorite.setImageResource(R.drawable.toggle_favorite_enable);
+            changeTabTitle("Favorites", Color.WHITE, Color.RED, R.drawable.toggle_favorite_white);
+            btnSetting.setImageResource(R.drawable.toggle_setting_disable);
+            btnHistory.setImageResource(R.drawable.toggle_history_disable);
+            btnBook.setImageResource(R.drawable.toggle_book_disable);
         });
 
 
@@ -97,29 +206,88 @@ public class MainActivity extends AppCompatActivity implements
                 return true;
             }
         });
+    }
 
+
+    public void showSCV(){
+        final FancyShowCaseView SCV_Setting = new FancyShowCaseView.Builder(this)
+                .focusOn(btnSetting)
+                .title("Install language packs, change the color of the recognition pane, manage the language used.")
+                .build();
+
+        final FancyShowCaseView SCV_Book = new FancyShowCaseView.Builder(this)
+                .focusOn(btnBook)
+                .title("Allows users to save their favorite vocabulary.")
+                .build();
+
+        final FancyShowCaseView SCV_Float = new FancyShowCaseView.Builder(this)
+                .focusOn(btnFloat)
+                .title("Minimize the application to use in a more convenient way.")
+                .build();
+        final FancyShowCaseView SCV_Favorites = new FancyShowCaseView.Builder(this)
+                .focusOn(btnFavorite)
+                .title("Allows users to save favorite images taken.")
+                .build();
+        final FancyShowCaseView SCV_History = new FancyShowCaseView.Builder(this)
+                .focusOn(btnHistory)
+                .title("Allows the user to review the history of the captured images on the phone screen.")
+                .build();
+        mQueue = new FancyShowCaseQueue()
+                .add(SCV_Setting)
+                .add(SCV_Book)
+                .add(SCV_Float)
+                .add(SCV_Favorites)
+                .add(SCV_History);
+        mQueue.show();
 
     }
 
     private void addControls() {
+        ocrManager = new OcrManager();
+        ocrManager.initAPI();
+        imTabTitle = findViewById(R.id.imTabTitle);
+        lbTabTitle = findViewById(R.id.lbTabTitle);
+        lbTabTitleBackground = findViewById(R.id.lbTabTitleBackground);
         btnSetting = findViewById(R.id.btnSetting);
         btnHistory = findViewById(R.id.btnHistory);
         btnFloat = findViewById(R.id.btnFloat);
+        btnBook = findViewById(R.id.btnBook);
+        btnFavorite = findViewById(R.id.btnFavorite);
         frmMainFrame = findViewById(R.id.frmMainFrame);
         gestureDetector = new GestureDetector(this, new BtnStartModeGesture());
 
     }
-
 
     private void loadAnimations() {
         anim_btnscan_changemode_fadein = AnimationUtils.loadAnimation(this, R.anim.anim_btnscan_changemode_fadein);
         anim_btnscan_changemode_fadeout = AnimationUtils.loadAnimation(this, R.anim.anim_btnscan_changemode_fadeout);
         anim_bounce = AnimationUtils.loadAnimation(this, R.anim.anim_bounce);
         anim_zoomout = AnimationUtils.loadAnimation(this, R.anim.anim_zoomout);
+        anim_general_fadein = AnimationUtils.loadAnimation(this, R.anim.anim_general_fadein);
+        anim_general_fadeout = AnimationUtils.loadAnimation(this, R.anim.anim_general_fadeout);
+        anim_tabtile_rotate = AnimationUtils.loadAnimation(this, R.anim.anim_tabtile_rotate);
     }
 
+    public int getStatusBarHeight() {
+        int result = 0;
+        int resourceId = getResources().getIdentifier("status_bar_height", "dimen", "android");
+        if (resourceId > 0) {
+            result = getResources().getDimensionPixelSize(resourceId);
+        }
+        return result;
+    }
 
-
+    private void changeTabTitle(String title, int fgColor, int bgColor, int drawable) {
+        lbTabTitle.setText(title);
+        //imTabTitle.startAnimation(anim_tabtile_rotate);
+        imTabTitle.animate().setDuration(200).alpha(0).withEndAction(new Runnable() {
+            @Override
+            public void run() {
+                imTabTitle.setImageResource(drawable);
+                imTabTitle.setAlpha(1f);
+            }
+        });
+    }
 
     private void openFragment(Fragment fragment) {
         FragmentManager fragmentManager = getSupportFragmentManager();
@@ -135,19 +303,25 @@ public class MainActivity extends AppCompatActivity implements
 
 
     public void createDirs() {
-            File storeDirectory = new File(CACHE);
-            if (!storeDirectory.exists()) {
-                boolean success = storeDirectory.mkdirs();
-            }
+        File storeDirectory = new File(CACHE);
+        if (!storeDirectory.exists()) {
+            boolean success = storeDirectory.mkdirs();
+        }
 
-                File imgDirectory = new File(CACHE+"histories/img/");
-                if (!imgDirectory.exists()) imgDirectory.mkdirs();
+        File imgDirectory = new File(CACHE+"histories/img/");
+        if (!imgDirectory.exists()) imgDirectory.mkdirs();
 
-                File xmlDirectory = new File(CACHE+"histories/xml/");
-                if (!xmlDirectory.exists()) xmlDirectory.mkdirs();
+        File xmlDirectory = new File(CACHE+"histories/xml/");
+        if (!xmlDirectory.exists()) xmlDirectory.mkdirs();
 
-                File datDirectory = new File(CACHE+"dat/");
-                if (!datDirectory.exists()) datDirectory.mkdirs();
+        File datDirectory = new File(CACHE+"tessdata/");
+        if (!datDirectory.exists()) datDirectory.mkdirs();
+
+        File cameraIMGDirectory = new File(CACHE+"camera/img/");
+        if (!cameraIMGDirectory.exists()) cameraIMGDirectory.mkdirs();
+
+        File cameraXMLDirectory = new File(CACHE+"camera/xml/");
+        if (!cameraXMLDirectory.exists()) cameraXMLDirectory.mkdirs();
     }
 
 
@@ -172,11 +346,44 @@ public class MainActivity extends AppCompatActivity implements
 
         @Override
         public boolean onSingleTapUp(MotionEvent e) {
+            anim_zoomout.setAnimationListener(new Animation.AnimationListener() {
+                @Override
+                public void onAnimationStart(Animation animation) {
+
+                }
+
+                @Override
+                public void onAnimationEnd(Animation animation) {
+                    Intent intent = null;
+                    switch (scanMode) {
+                        case 0: //camera
+                            File file = new File(MainActivity.CACHE + "camera/img/camera.jpg");
+                            intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+                            intent.putExtra(MediaStore.EXTRA_OUTPUT, Uri.fromFile(file));
+                            startActivityForResult(intent, 100);
+                            onPause();
+                            break;
+                        case 1: //screen
+                            intent = new Intent(MainActivity.this, FloatingActivity.class);
+                            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                            startActivity(intent);
+                            finish();
+                            break;
+                        case 2: //file
+                            intent = new Intent();
+                            intent.setType("image/*");
+                            intent.setAction(Intent.ACTION_GET_CONTENT);
+                            startActivityForResult(Intent.createChooser(intent, "Select Picture"), 101);
+                            break;
+                    }
+                }
+
+                @Override
+                public void onAnimationRepeat(Animation animation) {
+
+                }
+            });
             btnFloat.startAnimation(anim_zoomout);
-                Intent intent = new Intent(MainActivity.this, FloatingActivity.class);
-                intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                startActivity(intent);
-                finish();
             return super.onSingleTapUp(e);
         }
 
@@ -188,4 +395,87 @@ public class MainActivity extends AppCompatActivity implements
 
     }
 
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+
+
+        //lay anh
+        if ( (resultCode == 100 || requestCode==101) && resultCode == Activity.RESULT_OK) {
+
+            String screenshotPath;
+
+            if (requestCode==100) { // camera
+                screenshotPath = MainActivity.CACHE + "camera/img/camera.jpg";
+            } else { //file
+                screenshotPath = getRealPathFromURI(data.getData());
+            }
+            //ghi file
+
+            try {
+                //luu hinh anh
+                Bitmap bitmap = getScaledBitmap(new File(screenshotPath));
+                FileOutputStream fos = null;
+                fos = new FileOutputStream(screenshotPath);
+
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, fos);
+                fos.close();
+                bitmap = getScaledBitmap(new File(screenshotPath));
+
+                Log.d("IntentRe", "Scaled");
+
+                String xmlData = ocrManager.startRecognize(bitmap,  OcrManager.RETURN_HOCR);
+                Log.d("IntentRe", "Xml");
+
+                //nhan dien chu viet
+                String xmlPath = MainActivity.CACHE + "camera/xml/camera.xml";
+                fos = new FileOutputStream(xmlPath);
+                fos.write(xmlData.getBytes());
+
+                Intent intent =  new Intent(this, ScreenshotViewerActivity.class);
+                intent.putExtra("ScreenshotObj", new ScreenshotObj(screenshotPath, xmlPath));
+                startActivity(intent);
+
+            } catch (FileNotFoundException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+
+
+        }
+
+
+    }
+
+    public Bitmap getScaledBitmap(File imgFile)
+    {
+
+        if(imgFile.exists()){
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inSampleSize = Setting.COMPRESSED_RATE;
+            Bitmap myBitmap = BitmapFactory.decodeFile(imgFile.getAbsolutePath(), options);
+            myBitmap = Bitmap.createScaledBitmap(myBitmap,
+                    screenWidth, screenHeight, false);
+            return  myBitmap;
+        }
+        else
+            return null;
+    }
+
+
+    private String getRealPathFromURI(Uri contentURI) {
+        String result;
+        Cursor cursor = getContentResolver().query(contentURI, null, null, null, null);
+        if (cursor == null) { // Source is Dropbox or other similar local file path
+            result = contentURI.getPath();
+        } else {
+            cursor.moveToFirst();
+            int idx = cursor.getColumnIndex(MediaStore.Images.ImageColumns.DATA);
+            result = cursor.getString(idx);
+            cursor.close();
+        }
+        return result;
+    }
 }
