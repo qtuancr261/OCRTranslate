@@ -1,5 +1,6 @@
 package com.bitstudio.aztranslate;
 
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.os.Bundle;
@@ -18,6 +19,7 @@ import android.widget.Switch;
 import android.widget.Toast;
 
 import com.bitstudio.aztranslate.dialogs.ColorDialog;
+import com.bitstudio.aztranslate.services.BookMarkService;
 import com.nightonke.boommenu.BoomButtons.BoomButton;
 import com.nightonke.boommenu.BoomButtons.ButtonPlaceEnum;
 import com.nightonke.boommenu.BoomButtons.InnerOnBoomButtonClickListener;
@@ -56,7 +58,7 @@ public class SystemSettingActivity extends AppCompatActivity implements ColorDia
     private void initSetting() {
         btnColor.setBackgroundColor(Setting.WordBorder.BORDER_COLOR);
         id_com.setText( String.valueOf(Setting.COMPRESSED_RATE));
-        swNotice.setChecked(Setting.NOTICE);
+        swNotice.setChecked(Setting.Notification.ENABLE);
     }
 
     protected void setControl(){
@@ -68,6 +70,18 @@ public class SystemSettingActivity extends AppCompatActivity implements ColorDia
 
             @Override
             public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
+                if(charSequence.toString().equals(""))
+                {
+                    id_com.setText(0+"");
+                }
+                else
+                {
+                    int compressed = Integer.valueOf(charSequence.toString());
+                    if(compressed>16 || compressed<0)
+                    {
+                        id_com.setText(16+"");
+                    }
+                }
 
             }
 
@@ -77,13 +91,22 @@ public class SystemSettingActivity extends AppCompatActivity implements ColorDia
                 int compressed = Integer.valueOf(editable.toString());
                 Setting.COMPRESSED_RATE = compressed;
                 pre.edit().putInt("COMPRESSED", compressed).commit();
+
+
             }
         });
 
         swNotice.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                Toast.makeText(SystemSettingActivity.this, isChecked+"", Toast.LENGTH_SHORT).show();
+                Intent intent = new Intent(SystemSettingActivity.this, BookMarkService.class);
+                Setting.Notification.ENABLE = isChecked;
+                pre.edit().putBoolean("NOTIFICATION_ENABLE", isChecked).commit();
+                if (isChecked) {
+                    startService(intent);
+                } else {
+                    stopService(intent);
+                }
             }
         });
 
@@ -99,7 +122,7 @@ public class SystemSettingActivity extends AppCompatActivity implements ColorDia
 
 
 
-
+        BuilderManager.imageResourceIndex = 0;
         bmb = (BoomMenuButton) findViewById(R.id.bmb);
         assert bmb != null;
         bmb.setButtonEnum(ButtonEnum.SimpleCircle);
@@ -118,7 +141,7 @@ public class SystemSettingActivity extends AppCompatActivity implements ColorDia
        bmb.getBuilder(0).innerListener(new InnerOnBoomButtonClickListener() {
            @Override
            public void onButtonClick(int index, BoomButton boomButton) {
-               Toast.makeText(SystemSettingActivity.this, "hello", Toast.LENGTH_SHORT).show();
+
            }
        });
 
@@ -176,6 +199,7 @@ public class SystemSettingActivity extends AppCompatActivity implements ColorDia
         pre=getSharedPreferences("setting",MODE_PRIVATE);
         setID();
      //   getPreference();
+
     }
 
 

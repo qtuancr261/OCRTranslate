@@ -4,9 +4,14 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.os.Environment;
 
+import com.bitstudio.aztranslate.models.Language;
 import com.bitstudio.aztranslate.models.LanguageLite;
 
+import java.io.File;
 import java.util.ArrayList;
+
+import static com.bitstudio.aztranslate.Setting.OCRDir.OCRDIR_TESSDATA;
+
 
 /**
  * Created by LN Quy on 14/03/2018.
@@ -16,7 +21,18 @@ public class Setting {
     public static int BTNCHANGEMODE_GESTURES_THRESHOLD = 10;
     public static int COMPRESSED_RATE = 8;
     public static boolean NOTICE = false;
-    public static ArrayList<LanguageLite> LANGUAGE = new ArrayList<>();
+
+    public static ArrayList<LanguageLite> LANGUAGE_LIST = new ArrayList<LanguageLite>() {
+        @Override
+        public boolean add(LanguageLite languageLite) {
+            if (this.contains(languageLite)) return false;
+            return super.add(languageLite);
+        }
+
+
+
+
+    };
 
     public static String recoLang = "vie";
     public static String tranLang = "vi";
@@ -34,25 +50,6 @@ public class Setting {
         public static String OCRDIR_HISTORIES = OCRDIR +"histories/";
     }
 
-
-
-    static {
-        LANGUAGE.add(new LanguageLite("Azerbaijan","aze","az"));
-        LANGUAGE.add(new LanguageLite("Amharic","amh","am"));
-        LANGUAGE.add(new LanguageLite("English","eng","en"));
-        LANGUAGE.add(new LanguageLite("Arabic","ara","ar"));
-        LANGUAGE.add(new LanguageLite("Afrikaans","afr","af"));
-        LANGUAGE.add(new LanguageLite("Belarusian","bel","be"));
-        LANGUAGE.add(new LanguageLite("Bengali","ben","bn"));
-        LANGUAGE.add(new LanguageLite("Bulgarian","bul","bg"));
-        LANGUAGE.add(new LanguageLite("Bosnian","bos","bs"));
-        LANGUAGE.add(new LanguageLite("Vietnamese","vie","vi"));
-        LANGUAGE.add(new LanguageLite("Italian","ita","it"));
-        LANGUAGE.add(new LanguageLite("Spanish","spa","es"));
-        LANGUAGE.add(new LanguageLite("Chinese","chi_sim","zh"));
-
-    }
-
     public static class Screen {
         public static int HEIGH = 0;
         public static int WIDTH = 0;
@@ -60,10 +57,28 @@ public class Setting {
     }
 
     public static LanguageLite findLanguageByFileName(String ocr) {
-        for (LanguageLite l: LANGUAGE) {
+        for (LanguageLite l: LANGUAGE_LIST) {
             if (l.ocrSymbol.equals(ocr)) return l;
         }
         return null;
+    }
+
+    public static ArrayList<LanguageLite> getOCRLanguageList() {
+        ArrayList<LanguageLite> t = new ArrayList<>();
+        for (LanguageLite l: LANGUAGE_LIST) {
+            if ((new File(OCRDIR_TESSDATA+l.ocrSymbol)).exists() ) {
+                t.add(l);
+            }
+        }
+        return t;
+    }
+
+    public static class Notification {
+        public static int MODE_RANDOM = 0;
+        public static int MODE_SEQUENCE = 1;
+        public static long TIME_DELAY = 20*1000;
+
+        public static boolean ENABLE = false;
     }
 
     public static class BORDER_SHAPE {
@@ -74,7 +89,10 @@ public class Setting {
     public static class YandexAPI {
         public static final String API = "https://translate.yandex.net/api/v1.5/tr.json/translate?";
         public static final String KEY = "trnsl.1.1.20180329T083614Z.2b685ad1b1385380.fdb64e113f85b99546bdafe847164fdaab069e97";
-        public static String LANG = "en-vi";
+
+        public static String LANG() {
+            return Language.recognizeFrom.transSymbol+"-"+Language.translateTo.transSymbol;
+        }
     }
 
 
@@ -94,6 +112,9 @@ public class Setting {
 
 
 
-
+    public static class Language {
+        public static LanguageLite recognizeFrom;
+        public static LanguageLite translateTo;
+    }
 
 }
